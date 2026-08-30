@@ -45,7 +45,7 @@ print(f"client_id prefix       : {cid[:10] if cid else '(none)'}")
 print()
 
 cid, sec, host = cid.strip(), sec.strip(), host.strip().rstrip("/")
-H = {"client_id": cid, "client_secret": sec, "Content-Type": "application/json"}
+H = {"client_id": cid, "client_secret": sec, "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Ratify/1.0 (+https://github.com/joseph-nassour/ratify)"}
 
 print("=" * 60)
 print("PROBE 1 — Document Generation (does the credential pair work AT ALL?)")
