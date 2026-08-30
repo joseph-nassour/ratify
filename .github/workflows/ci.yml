@@ -46,7 +46,7 @@ jobs:
           exit 1
 
   foxit-smoke:
-    name: Foxit live smoke test (manual only — spends credits)
+    name: Foxit live smoke test (manual only)
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -61,4 +61,8 @@ jobs:
           FOXIT_CLIENT_ID: ${{ secrets.FOXIT_CLIENT_ID }}
           FOXIT_CLIENT_SECRET: ${{ secrets.FOXIT_CLIENT_SECRET }}
           FOXIT_API_HOST: ${{ secrets.FOXIT_API_HOST }}
-        run: python scripts/foxit_smoke.py
+        run: |
+          echo '## Foxit probe result' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python scripts/foxit_smoke.py 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
