@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Test suite (123 tests, no network, no credentials)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: python -m unittest discover -s tests -t . -v
+
+  docker:
+    name: Docker image builds and boots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t ratify:ci .
+      - name: Boot it and check the health endpoint
+        run: |
+          docker run -d --name ratify-ci -e PORT=8000 -p 8000:8000 ratify:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
+              echo "healthz answered after ${i}s"
+              curl -fsS http://localhost:8000/healthz
+              docker rm -f ratify-ci
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::container never answered /healthz"
+          docker logs ratify-ci
+          docker rm -f ratify-ci
+          exit 1
+
+  foxit-smoke:
+    name: Foxit live smoke test (manual only — spends credits)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Probe Foxit
+        env:
+          FOXIT_CLIENT_ID: ${{ secrets.FOXIT_CLIENT_ID }}
+          FOXIT_CLIENT_SECRET: ${{ secrets.FOXIT_CLIENT_SECRET }}
+          FOXIT_API_HOST: ${{ secrets.FOXIT_API_HOST }}
+        run: python scripts/foxit_smoke.py
