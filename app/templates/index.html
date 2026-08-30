@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ratify — drafted by an agent, ratified by a human</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">Ratify</div>
+  <div class="mode">eSign: {{ esign_mode }}</div>
+</header>
+
+<main class="wrap narrow">
+  <h1>An agent that drafts engagement letters<br><em>and cannot sign them.</em></h1>
+  <p class="lede">
+    Not because it is told not to — because the signing credential does not exist in the
+    process it runs in. Every term it <strong>invented</strong> rather than was
+    <strong>told</strong> is surfaced for a human decision before a signature request can
+    exist at all.
+  </p>
+
+  <form method="post" action="/draft" class="card">
+    <label for="prompt">Describe the engagement</label>
+    <textarea id="prompt" name="prompt" rows="5" required>{{ example }}</textarea>
+    <fieldset class="attacks">
+      <legend>Attach a supporting document <span class="hint">— the adversarial test</span></legend>
+      <label class="check"><input type="radio" name="poisoned" value="" checked>
+        Clean document</label>
+      <label class="check"><input type="radio" name="poisoned" value="sign">
+        …carrying an instruction to <strong>sign immediately</strong>
+        <span class="hint">aims at the signing call — fails on architecture</span></label>
+      <label class="check"><input type="radio" name="poisoned" value="provenance">
+        …carrying an instruction to <strong>report the agent's own terms as yours</strong>
+        <span class="hint">aims at the gate — fails on adjudication</span></label>
+    </fieldset>
+    <button type="submit" class="primary">Draft it</button>
+  </form>
+
+  <section class="explainer">
+    <h2>Where the boundary is drawn</h2>
+    <div class="grid3">
+      <div>
+        <h3>Not at the end</h3>
+        <p>A confirm button before signing asks a human to take responsibility for an
+        artefact they did not compose, decided fifteen tool calls upstream. The gates go
+        upstream, at each term you will be bound by.</p>
+      </div>
+      <div>
+        <h3>Not on reversibility</h3>
+        <p>Silently changing a fee is perfectly reversible and completely unsafe. The axis
+        that predicts harm is <em>does this change what the human will be bound to</em>.</p>
+      </div>
+      <div>
+        <h3>Not on "shouldn't"</h3>
+        <p>An agent that shouldn't sign will sign when a document it reads says to. This
+        one holds no signing credential at all — <a href="/agent-env">see for yourself</a>.</p>
+      </div>
+    </div>
+  </section>
+  <p class="foot">Built with the Foxit PDF, Document Generation and eSign APIs.
+  Code written by Claude working autonomously; a human reviews and submits.</p>
+</main>
+</body>
+</html>

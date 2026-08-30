@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ratify — term sheet</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><a href="/">Ratify</a></div>
+  <div class="mode">planner: {{ s.planner }} &nbsp;·&nbsp; eSign: {{ esign_mode }}</div>
+</header>
+
+{% if error %}<div class="banner error">{{ error }}</div>{% endif %}
+
+{% if injections %}
+<div class="banner security">
+  <strong>Instruction-like text found in the input and not acted on.</strong>
+  <ul>{% for e in injections %}<li>{{ e }}</li>{% endfor %}</ul>
+  <span>The agent does not obey text found in its inputs — and holds no signing
+  credential even if it did.</span>
+</div>
+{% endif %}
+
+{% if rejections %}
+<div class="banner security provenance">
+  <strong>The model's claims about where terms came from were rejected.</strong>
+  <ul>{% for e in rejections %}<li>{{ e }}</li>{% endfor %}</ul>
+  <span>Provenance is re-derived from your own instruction; the model's own labels are
+  discarded. A term it cannot account for is shown to you as invented — which is what
+  keeps the gate shut when the model has been talked into something.</span>
+</div>
+{% endif %}
+
+<main class="wrap cols">
+  <section class="col-main">
+    <h2>Material terms
+      <span class="pill stated">{{ counts.stated }} stated</span>
+      <span class="pill derived">{{ counts.derived }} derived</span>
+      <span class="pill invented">{{ counts.invented }} invented</span>
+    </h2>
+
+    {% for t in s.sheet.display_order() %}
+    <article class="term {{ t.provenance }} {% if t.resolved %}resolved{% endif %} {% if t.resolution == 'removed' %}removed{% endif %}">
+      <div class="term-head">
+        <span class="label">{{ t.label }}</span>
+        <span class="tag {{ t.provenance }}">{{ t.provenance }}</span>
+        {% if t.resolution %}<span class="tag done">{{ t.resolution }}</span>{% endif %}
+      </div>
+      <div class="value">{% if t.resolution == 'removed' %}<s>{{ t.proposed_value }}</s>{% else %}{{ t.value }}{% endif %}</div>
+      <div class="evidence">{{ t.evidence }}</div>
+      {% if not t.resolved %}
+      <form method="post" action="/s/{{ s.id }}/term/{{ t.key }}" class="actions">
+        <button name="action" value="accept" class="ok">Accept</button>
+        <input type="text" name="value" placeholder="replace with…" aria-label="new value for {{ t.label }}">
+        <button name="action" value="edit">Use mine</button>
+        {% if t.removable %}<button name="action" value="remove" class="danger">Remove</button>{% endif %}
+      </form>
+      {% elif not s.folder_id %}
+      {# Already decided, but the envelope does not exist yet, so this is still
+         revisable. It matters that it is: changing a term after ratifying revokes
+         the approval, because the approval was minted against the old fingerprint.
+         That is the "approved v1, sent v2" failure, and if the UI offered no way to
+         reach it the entry's strongest property would be invisible. #}
+      <form method="post" action="/s/{{ s.id }}/term/{{ t.key }}" class="actions revise">
+        <input type="text" name="value" placeholder="change this…" aria-label="change {{ t.label }}">
+        <button name="action" value="edit">Change it</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </section>
+
+  <aside class="col-side">
+    <div class="card gate {% if gate_open %}open{% else %}shut{% endif %}">
+      <h3>Signature gate</h3>
+      <p class="reason">{{ gate_reason }}</p>
+
+      {% if not s.folder_id %}
+        {% if ratified %}
+          <p class="ok-note">Ratified. The approval is bound to this exact version of the
+          document — change any term and it is revoked.</p>
+          <form method="post" action="/s/{{ s.id }}/send">
+            <button class="primary" type="submit">Send for signature</button>
+          </form>
+        {% else %}
+          <form method="post" action="/s/{{ s.id }}/ratify">
+            <button class="primary" type="submit" {% if not gate_open %}disabled{% endif %}>
+              Ratify these terms
+            </button>
+          </form>
+          {% if not gate_open %}<p class="hint">The button is disabled because the agent
+          invented terms nobody has agreed to yet.</p>{% endif %}
+        {% endif %}
+      {% else %}
+        <p class="envelope">Envelope <code>{{ s.folder_id }}</code> — {{ s.envelope_status }}</p>
+        {% if s.envelope_status != 'COMPLETED' %}
+        <form method="post" action="/s/{{ s.id }}/simulate-signature">
+          <button type="submit">Simulate the signer signing</button>
+        </form>
+        {% endif %}
+        <p><a href="/s/{{ s.id }}/status">Envelope status &amp; audit trail (JSON)</a></p>
+      {% endif %}
+      <p><a href="/doc/{{ s.doc_id }}.pdf" target="_blank">Open the draft PDF</a></p>
+    </div>
+
+    {% if diff %}
+    <div class="card">
+      <h3>What the agent added</h3>
+      <ul class="diff">
+        {% for d in diff %}
+        <li><span class="tag {{ d.origin }}">{{ d.origin }}</span>
+          <strong>{{ d.label }}</strong>: {{ d.value or '—' }}
+          {% if d.resolution %}<em>({{ d.resolution }})</em>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <h3>Agent tool log</h3>
+      <ol class="log">
+        {% for st in s.steps %}
+        <li class="{% if st.gated %}gated{% endif %}">{{ st.name }}
+          <span>{{ st.description }}</span></li>
+        {% endfor %}
+      </ol>
+      <p class="hint">{{ s.docgen_mode }}</p>
+      {% for n in s.notes %}<p class="hint">{{ n }}</p>{% endfor %}
+    </div>
+
+    <div class="card env">
+      <h3>What the agent process can see</h3>
+      <p class="hint">Variable names only. The signing credentials are in the parent
+      process and were never copied into the agent's environment.</p>
+      <code class="envlist">{{ env_report.agent_process_sees|join(', ') }}</code>
+      <p class="verdict">signing variables in the agent process:
+        <strong>{{ env_report.signing_variables_in_agent|length }}</strong></p>
+    </div>
+
+    <div class="card">
+      <h3>Activity</h3>
+      <ul class="hist">
+        {% for h in s.history %}<li><code>{{ h.at }}</code> {{ h.message }}</li>{% endfor %}
+      </ul>
+    </div>
+  </aside>
+</main>
+</body>
+</html>
