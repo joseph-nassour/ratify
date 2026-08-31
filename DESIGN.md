@@ -151,7 +151,7 @@ So Ratify implements **can't**, not **shouldn't**.
   by copying the parent environment and deleting things: a denylist forgets a variable, an allowlist
   forgets nothing, and the difference shows up the day someone adds `FOXIT_ESIGN_TOKEN` to the
   deployment.
-- `FOXIT_ESIGN_CLIENT_ID` and `FOXIT_ESIGN_CLIENT_SECRET` exist **only** in the parent web process.
+- `FOXIT_CLIENT_ID` and `FOXIT_CLIENT_SECRET` exist **only** in the parent web process.
   There is no tool, no MCP endpoint and no HTTP route reachable from the agent that reaches eSign.
 - The agent's most privileged possible output is therefore a signature **request** — a row in our
   store. Only a human-issued approval token lets the parent act on it.
@@ -162,9 +162,13 @@ So Ratify implements **can't**, not **shouldn't**.
 
 "This component structurally cannot do X" is not testable behaviourally, because the whole point is
 that no code path exists to exercise. So the tests assert on structure (`tests/test_isolation.py`,
-13 tests):
+25 tests):
 
-- The agent package's source is scanned for any mention of the eSign client or an `import app.*`.
+- The agent package's source is scanned for any mention of the eSign client or an `import app.*`, and
+  — since §5.2 — for any Foxit host, credential header name or credential variable at all. The
+  structural tests read the source with comments and string literals stripped where the property is
+  about code rather than prose, so documenting a mistake in a docstring cannot fail the test that
+  guards against it.
   (This caught something real immediately — a docstring in the agent that named the eSign module.
   Harmless in itself, and exactly the drift that precedes a real import appearing.)
 - The `app/` package is scanned to prove **exactly one** module calls `sendDraftFolder`.
@@ -173,12 +177,78 @@ that no code path exists to exercise. So the tests assert on structure (`tests/t
 - `"sendNow": True` is asserted absent from the entire codebase.
 - And the boundary itself is asserted **against a real spawned process**: the test builds the agent
   environment, runs `subprocess.run`, reads the child's `os.environ` back, and asserts no variable
-  matching `*ESIGN*` survived. Asserting that a dict lacks a key proves that a dict lacks a key. This
-  proves the operating system agrees.
+  matching `*FOXIT*` or `*ESIGN*` survived. Asserting that a dict lacks a key proves that a dict
+  lacks a key. This proves the operating system agrees.
 
 The running app exposes `/agent-env`, which prints what the agent process can actually see. That is a
 demo beat rather than a test, and it is there because this claim should be visible to a judge in four
 seconds rather than taken on trust.
+
+### 5.2 One key: what Foxit's API unification does to this boundary
+
+**This section describes a bug we shipped, found on 2026-08-30, and fixed. It is here because it is
+the most transferable thing in the entry, and because a Foxit engineer reading the original design
+would have spotted it in about ten seconds.**
+
+The first version of this boundary was more permissive than the one above. It gave the agent the
+**Document Generation** credential and withheld the **eSign** credential, on the reasoning in §3:
+rendering a PDF is reversible and non-material, releasing an envelope is not. Two credentials, two
+blast radii, a boundary between them. `hackathon-spec.md` §1.2 records the vendor documentation that
+justified it — two products, two hosts, header auth versus OAuth2, credentials described as *"not
+interchangeable."*
+
+**Foxit has since unified their APIs.** One credential pair, one host, plain headers:
+
+    POST https://na1.fusion.foxit.com/document-generation/api/GenerateDocumentBase64
+    POST https://na1.fusion.foxit.com/esign/api/v1/folders/createfolder
+
+Both accept the same `client_id` / `client_secret`. Verified against the live service: an account
+credential authenticated a Document Generation call and created a real DRAFT envelope, with no second
+credential involved anywhere.
+
+So the "Document Generation credential" we were handing to the agent was a credential that could
+`POST /esign/api/v1/folders/createfolder` with `sendNow: true` in a single request. **The agent had
+signing authority.** Not through a tool it had been given, not through an import — through the
+capability attached to a key it was handed for an unrelated reason.
+
+Every control we had built kept passing while that was true:
+
+- the allowlist was correct, and admitted exactly the variable it was told to;
+- the post-construction guard checked for the substring `ESIGN`, and the leaked variable was called
+  `FOXIT_CLOUD_API_CLIENT_SECRET`;
+- `/agent-env` reported *"signing variables in the agent process: 0"*, and it was telling the truth
+  about the question it was asked;
+- and a test named `test_docgen_credentials_are_present` asserted the leak, in green, as a feature.
+
+**The fix is that the agent now holds no Foxit credential of any kind.** It composes the term sheet
+and draws a local preview with a dependency-free renderer that needs no credential and reaches no
+network. Vendor rendering and signing both live in the parent. The guard is keyed on `FOXIT` rather
+than `ESIGN` — on who issued the credential, not on what the vendor happened to name it — and
+`tests/test_isolation.py` now asserts that no Foxit variable, under either the current names or the
+legacy ones, can reach the agent, that the allowlist itself names none, and that the agent package
+contains no Foxit host, credential header or client at all.
+
+Three things worth taking from it, none of them about Foxit:
+
+1. **A credential is a capability, not a label.** Scoping an agent by which *tools* it is given is
+   only as good as the assumption that its credential cannot reach the other endpoints. Vendors merge
+   products; that assumption expires without notice and without an error message.
+2. **A guard keyed on someone else's naming convention has a silent expiry date.** `ESIGN` was a
+   correct check and it went stale the day the credential arrived under a different name. This is the
+   same failure as §6 one layer out: in §6 a model supplied the metadata the gate keyed on; here a
+   *vendor* did.
+3. **A passing test can encode a mistaken model.** `test_docgen_credentials_are_present` was green
+   throughout. It has been inverted rather than deleted, so the file now carries both the assertion
+   and the reason it reversed.
+
+There is a second, smaller property that fell out of the same fix and we would not have found
+otherwise. The document put in front of a signer is now rendered **by the parent, from the ratified
+term sheet** (`app/main.py :: _render_document`); the agent's PDF bytes are discarded. Previously the
+agent's bytes were what got served to eSign, which meant a compromised planner could return a clean
+term sheet and a PDF that disagreed with it — and the human, who reviews the term sheet, would have
+ratified one document and signed another. The gate, the fingerprint and the audit trail would all
+have kept working perfectly, certifying something nobody read. Same rule as §6, third instance:
+**never let the component you are constraining supply the artefact the constraint is about.**
 
 ---
 
@@ -277,7 +347,7 @@ one thing the gate depends on not happening.
 | Convert, merge, compress, OCR, extract, watermark, page ops | ✅ | | Not material. Gating these spends the attention the fee needs. |
 | Extract terms from the prompt | ✅ | | Reading is not deciding. |
 | Derive dates and instalments | ✅ | | Shown with the arithmetic; recomputed independently before it is trusted. |
-| Render and re-render the document | ✅ | | Regenerable from the term sheet; the term sheet is the artefact that matters. |
+| Render and re-render the document | ✅ | | Regenerable from the term sheet; the term sheet is the artefact that matters. Done in the **parent**, from the ratified sheet — see §5.2. |
 | **Supply a term nobody asked for** | | 🛑 **per term** | The agent is deciding what you are bound to. |
 | **Claim a term came from you** | | 🛑 **adjudicated** | §6. A component may not certify its own trustworthiness. |
 | **Ratify the sheet** | | 🛑 **once, meaningfully** | Binds a fingerprint, not a session. |
@@ -297,13 +367,25 @@ and be abandoned without a signer ever hearing about it.
 
 An entry about not overtrusting automation should be accurate about itself.
 
-- **The Foxit integration has not been run against the live service.** Both clients — Document
-  Generation and eSign — are written to Foxit's published request shapes and sit behind a single
-  credential seam, but at the time of writing no credentials exist for this project, so no call has
-  ever been made. Everything that decides what the human is asked to approve is exercised by 123 tests
+- **The Foxit integration is partly verified, and this is the honest state of it.** Live, against the
+  real service: authentication on the unified credential pair, and `POST /esign/api/v1/folders/`
+  `createfolder` with `inputType: "url"`, which returned HTTP 200 and a real `DRAFT` envelope
+  (`folderId` nested under a `folder` key, as an integer — the client normalises it). Document
+  Generation authenticates but has not been called with a real template. `sendDraftFolder`,
+  `download` and `viewActivityHistory` have never met the service; their paths are inferred from the
+  same API family and are marked as unverified in `app/esign_client.ENDPOINTS` rather than in a note
+  somewhere. Everything that decides what the human is asked to approve is exercised by 135 tests
   against fixtures and scripted transports, and needs no credentials at all. `DRY_RUN=true` is the
   committed default and produces a real, openable PDF via a dependency-free renderer written for this
   purpose, so the entire pipeline is demonstrable at zero cost.
+- **The deployed instance runs on a Foxit sandbox key, and holds no credential at all.** A production
+  key requires a paid plan, which this project does not have. Separately, the public deployment is
+  configured with `DRY_RUN=true` and **no** Foxit credentials, so that a stranger cannot spend the
+  500-credit annual allowance or create envelopes in the account. What a judge exercises on the live
+  URL is the full pipeline against the local renderer and the dry-run eSign fixtures.
+- **One shipped bug, found and fixed on 2026-08-30, is described in full in §5.2** rather than
+  quietly corrected. The agent was being handed a credential that — after Foxit unified their
+  APIs — could release a signature envelope. Every control kept passing while it was true.
 - **The model transports are likewise unverified.** The planner chain is Gemini → Groq → deterministic
   with a silent fallback; with no key present it runs deterministic, which is the mode every test and
   most of the recorded demo run in. This is a smaller loss than it sounds: per §6.3 the safety
@@ -355,7 +437,7 @@ choices.
 | The whole journey, end to end | `app/main.py` | `tests/test_e2e_dryrun.py` (8) |
 
 ```
-python -m unittest discover -s tests -t .        # Ran 123 tests ... OK
+python -m unittest discover -s tests -t .        # Ran 135 tests ... OK
 ```
 
 No network, no credentials, under a second.

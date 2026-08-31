@@ -20,15 +20,53 @@ SRC = ROOT / "docs" / "index.html"
 OUT = ROOT / "build" / "frontdoor"
 OUT.mkdir(parents=True, exist_ok=True)
 
-# A copy with the three values filled in, to prove the submission-ready state works.
-FILLED = OUT / "index-filled.html"
+#: The three values that arrive from outside the codebase, in the one RATIFY block.
+#: Amended 2026-08-31: this script used to assume all three were still empty, which
+#: stopped being true the moment two of them were filled in — so it started reporting
+#: the *success* as three failures. Both states are now synthesised from whatever the
+#: source currently holds, so the check keeps working at every stage of the hand-off.
+KEYS = ("youtubeId", "liveAppUrl", "repoUrl")
+PLACEHOLDERS = {
+    "youtubeId": "aaaaaaaaaaa",
+    "liveAppUrl": "https://ratify.example.onrender.com",
+    "repoUrl": "https://github.com/example/ratify",
+}
+
 html = SRC.read_text(encoding="utf-8")
-filled = (
-    html.replace('youtubeId:  "",', 'youtubeId:  "aaaaaaaaaaa",')
-    .replace('liveAppUrl: "",', 'liveAppUrl: "https://ratify.example.onrender.com",')
-    .replace('repoUrl:    ""', 'repoUrl:    "https://github.com/example/ratify"')
-)
-assert filled != html, "placeholder substitution failed — the RATIFY block changed shape"
+
+
+def _assign(src: str, key: str, value: str) -> str:
+    """Rewrite one `key: "..."` assignment, insisting it appears exactly once."""
+    pattern = re.compile(rf'({re.escape(key)}:\s*)"[^"]*"')
+    out, n = pattern.subn(lambda m: f'{m.group(1)}"{value}"', src)
+    if n != 1:
+        raise SystemExit(
+            f"{key!r} appears {n} times in docs/index.html, expected exactly 1 — the "
+            f"RATIFY block has changed shape, and claude/submission-checklist.md tells "
+            f"a human to search for these exact names."
+        )
+    return out
+
+
+def _current(key: str) -> str:
+    m = re.search(rf'{re.escape(key)}:\s*"([^"]*)"', html)
+    return m.group(1) if m else ""
+
+
+print("current RATIFY values:")
+for k in KEYS:
+    v = _current(k)
+    print(f"  {k:<11} {v or '(empty — still pending)'}")
+
+# Both states are synthesised, so neither depends on how far the hand-off has got.
+EMPTIED = OUT / "index-unfilled.html"
+FILLED = OUT / "index-filled.html"
+emptied = html
+filled = html
+for key in KEYS:
+    emptied = _assign(emptied, key, "")
+    filled = _assign(filled, key, _current(key) or PLACEHOLDERS[key])
+EMPTIED.write_text(emptied, encoding="utf-8")
 FILLED.write_text(filled, encoding="utf-8")
 
 failures = []
@@ -67,7 +105,7 @@ def check(page, label, expect_iframe):
 with sync_playwright() as p:
     browser = p.chromium.launch()
     for label, path, expect_iframe in (
-        ("unfilled", SRC, False),
+        ("unfilled", EMPTIED, False),
         ("filled", FILLED, True),
     ):
         ctx = browser.new_context(viewport={"width": 1280, "height": 900})
@@ -108,10 +146,15 @@ with sync_playwright() as p:
         ctx.close()
     browser.close()
 
-# The submission-blocking placeholders must be findable by a plain grep.
-for token in ('youtubeId:  ""', 'liveAppUrl: ""', 'repoUrl:    ""'):
-    if token not in html:
-        failures.append(f"placeholder token missing from source: {token}")
+# The three names must stay greppable, because the hand-off document tells a human to
+# search for them. Their *values* are none of this check's business.
+for key in KEYS:
+    if len(re.findall(rf'{re.escape(key)}:\s*"[^"]*"', html)) != 1:
+        failures.append(f"{key} is not a single findable assignment in docs/index.html")
+
+still_pending = [k for k in KEYS if not _current(k)]
+if still_pending:
+    print("\nstill pending before submission:", ", ".join(still_pending))
 
 print("screenshots:", ", ".join(sorted(f.name for f in OUT.glob("*.png"))))
 if failures:

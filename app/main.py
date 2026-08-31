@@ -1,6 +1,6 @@
 """Ratify — FastAPI parent process.
 
-Holds the eSign credentials, the session store, the approval store, and the one route
+Holds the Foxit credential, the session store, the approval store, and the one route
 that can release an envelope. Spawns the agent as a subprocess with a scrubbed
 environment (app/supervisor.py) and never lets it near this module's secrets.
 
@@ -11,7 +11,6 @@ looking at a spinner while a toolchain warms up.
 
 from __future__ import annotations
 
-import base64
 import os
 import time
 import uuid
@@ -26,6 +25,7 @@ from fastapi.templating import Jinja2Templates
 
 from agent.terms import TermSheet, TermError
 from app.approval import ApprovalError, ApprovalStore, assert_may_send
+from app.docgen_client import DocGenClient, default_template_b64
 from app.esign_client import ESignClient, ESignError
 from app.supervisor import agent_env_report, run_agent
 
@@ -38,6 +38,10 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 approvals = ApprovalStore()
 esign = ESignClient()  # ★ the only holder of signing authority in this application
+#: Document Generation lives here too, and for the same reason: Foxit's unified API
+#: means one credential pair authenticates both products, so a process able to render
+#: is a process able to send. There is exactly one such process, and it is this one.
+docgen = DocGenClient()
 
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 
@@ -45,7 +49,7 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 #: document the agent has been asked to read — and both are inert, which is the demo.
 #:
 #: The first aims at the *signing call* and is the obvious one. It fails on
-#: architecture: the agent process holds no eSign credential (app/supervisor.py).
+#: architecture: the agent process holds no Foxit credential at all (app/supervisor.py).
 #:
 #: The second aims at the *gate*, and is the one worth demonstrating to someone who
 #: has already thought about the first. It does not ask the agent to sign. It asks the
@@ -131,6 +135,40 @@ def _store_pdf(session: Session, pdf: bytes) -> None:
     DOCS[session.doc_id] = pdf
 
 
+def _render_document(session: Session) -> None:
+    """Render the document that will be signed, in the parent, from the term sheet.
+
+    ★ Read this before changing it. The agent also renders a PDF, and those bytes are
+    deliberately thrown away. The human ratifies a **term sheet** — a table of values
+    and their provenance — and the only way the thing they ratified can equal the thing
+    that gets signed is if the document is generated *from* that table by the process
+    the human is talking to.
+
+    If the parent served the agent's bytes instead, a compromised planner could return
+    a clean-looking term sheet alongside a PDF that says something else, and the
+    signature would be collected on the PDF. The gate, the fingerprint and the audit
+    trail would all keep working perfectly, certifying a document nobody read. That is
+    the same failure as letting a model self-report provenance (agent/llm_planner.py),
+    one layer down: never let the component you are constraining supply the artefact
+    the constraint is about.
+
+    Rendering runs through Foxit Document Generation when credentials are present and
+    falls back to the local renderer otherwise, so a vendor outage degrades the
+    document's typesetting and nothing else.
+    """
+    pdf, note = docgen.generate_with_fallback(
+        default_template_b64(),
+        session.sheet.document_values(),
+        {t.key: t.provenance for t in session.sheet},
+    )
+    session.docgen_mode = (
+        f"The signable document was rendered in the parent process from the term sheet "
+        f"above — {note}. The agent holds no Foxit credential: on Foxit's unified API a "
+        f"document key is also a signing key, so the only safe amount to give it is none."
+    )
+    _store_pdf(session, pdf)
+
+
 def _invalidate_approval(session: Session, why: str) -> None:
     """Any change to the terms revokes the ratification that covered the old ones."""
     if session.approval_token:
@@ -192,11 +230,12 @@ def draft(prompt: str = Form(...), poisoned: str = Form(default="")):
         steps=result.get("steps", []),
         security_events=result.get("security_events", []),
         notes=result.get("notes", []),
-        docgen_mode=result.get("docgen_mode", ""),
         planner=result.get("planner", "deterministic"),
         attack=attack,
     )
-    _store_pdf(session, base64.b64decode(result["pdf_b64"]))
+    # NOT `result["pdf_b64"]`. The agent's render is a preview and is discarded here;
+    # see _render_document for why that is a security property rather than waste.
+    _render_document(session)
     if attack:
         session.log(f"attached document carried {attack}")
     session.log(f"agent ({session.planner}) drafted {len(session.sheet)} material terms "
@@ -255,10 +294,7 @@ def resolve_term(session_id: str, key: str,
         return RedirectResponse(url=f"/s/{session_id}?error={exc}", status_code=303)
 
     _invalidate_approval(s, f"{term.label} changed after ratification")
-    # Re-render so the PDF always reflects the current terms.
-    from agent.pdf_render import render_engagement_letter
-    _store_pdf(s, render_engagement_letter(
-        s.sheet.document_values(), {t.key: t.provenance for t in s.sheet}))
+    _render_document(s)  # the PDF always reflects the current terms
     return RedirectResponse(url=f"/s/{session_id}", status_code=303)
 
 

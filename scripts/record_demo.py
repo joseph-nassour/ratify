@@ -442,7 +442,7 @@ def record(smoke: bool = False) -> Path:
                  "flagging hardest the ones it made up rather than the ones you gave it "
                  "&mdash; and cannot sign, because the credential isn't there.", 8.0)
             card("Built by Claude &middot; submitted by a human",
-                 "123 tests. No credentials required.",
+                 "135 tests. No credentials required.",
                  "Designed, written and tested by Claude working autonomously overnight. "
                  "A named human reviews and submits it &mdash; which is the same boundary "
                  "this product argues for.", 6.5)

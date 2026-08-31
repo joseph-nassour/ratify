@@ -9,7 +9,7 @@ on:
 
 jobs:
   tests:
-    name: Test suite (123 tests, no network, no credentials)
+    name: Test suite (135 tests, no network, no credentials)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

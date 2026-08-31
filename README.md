@@ -26,7 +26,8 @@ The boundary argument — where the automated/human line is drawn and why — is
    (`sendNow: false`), released by a separate call.
 
 The agent runs in its own OS process whose environment is built from an allowlist. The
-eSign credentials are not on that allowlist. Visit `/agent-env` to see it.
+Foxit credentials are not on that allowlist — none of them, because Foxit's unified
+API means a document key is also a signing key. Visit `/agent-env` to see it.
 
 ## Run it
 
@@ -60,17 +61,27 @@ docker build -t ratify . && docker run -p 8000:8000 -e PORT=8000 ratify
 
 ## Going live against Foxit
 
-Copy `.env.example` to `.env` and fill it in. **Note that Foxit needs two credential
-pairs, not one** — the PDF/Document Generation APIs and the eSign API are different
-products on different hosts with different auth (headers vs OAuth2), and the
-credentials are not interchangeable.
+Copy `.env.example` to `.env` and fill it in. **Foxit has unified their APIs: one
+credential pair, one host, plain `client_id` / `client_secret` headers.** Document
+Generation answers on `/document-generation/api/...` and eSign on `/esign/api/v1/...`,
+both on `https://na1.fusion.foxit.com`. Older Foxit integration guides — and this
+project's own `hackathon-spec.md` §1.2 — describe two hosts, two credential pairs and
+OAuth2 for eSign. That is out of date; verified against the live service 2026-08-30.
+
+**This is a security fact before it is a configuration fact.** Because the pair is
+unified, a Document Generation credential can also create and release a signature
+envelope. There is no document-only Foxit key, so the agent gets no Foxit key at all.
 
 | Variable | Which process can see it |
 |---|---|
-| `FOXIT_CLOUD_API_HOST` / `_CLIENT_ID` / `_CLIENT_SECRET` | parent **and** agent |
-| `FOXIT_ESIGN_HOST` / `FOXIT_ESIGN_CLIENT_ID` / `FOXIT_ESIGN_CLIENT_SECRET` | **parent only** |
+| `FOXIT_API_HOST` / `FOXIT_CLIENT_ID` / `FOXIT_CLIENT_SECRET` | **parent only** |
 | `GEMINI_API_KEY` | agent only |
 | `PUBLIC_BASE_URL` | parent — set after the first deploy; eSign fetches the PDF from it |
+
+The agent renders its draft preview with the dependency-free local renderer
+(`agent/pdf_render.py`), which needs no credential and reaches no network. The document
+that is actually put in front of a signer is rendered by the parent, from the term
+sheet the human ratified — see `app/main.py :: _render_document`.
 
 Then set `DRY_RUN=false`. The free Developer plan is 500 shared credits **per year**
 (5 per eSign envelope), so the client refuses to create more than 25 live envelopes and
@@ -79,15 +90,17 @@ says so loudly rather than silently exhausting the allowance.
 ## Layout
 
 ```
-app/       parent web process — holds the eSign credentials
+app/       parent web process — holds the Foxit credential (both products, one pair)
   approval.py    approval tokens: minted only through the gate, bound to a document
   supervisor.py  builds the agent's environment from an allowlist and spawns it
   esign_client.py  ★ the only code that can cause a legally operative event
+  docgen_client.py Foxit Document Generation — here, not in the agent, because the
+                   credential is unified and therefore able to sign
   main.py        routes; exactly one of them can release an envelope
-agent/     the drafting agent — runs as a subprocess, no signing authority
+agent/     the drafting agent — runs as a subprocess, no credential of any kind
   terms.py       TermSheet + provenance + the gate itself
   planner.py     deterministic planner (LLM planner plugs in behind the same interface)
-  docgen_client.py, pdf_render.py
+  pdf_render.py  dependency-free renderer: the agent's draft preview
 tests/     the gate, the approvals, the isolation boundary, and a full dry-run journey
 ```
 

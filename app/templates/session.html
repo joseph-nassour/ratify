@@ -133,8 +133,10 @@
 
     <div class="card env">
       <h3>What the agent process can see</h3>
-      <p class="hint">Variable names only. The signing credentials are in the parent
-      process and were never copied into the agent's environment.</p>
+      <p class="hint">Variable names only. Every Foxit credential lives in the parent
+      process and none was copied into the agent's environment — not the eSign one, and
+      not the Document Generation one either, because Foxit unified their APIs and they
+      are now the same key.</p>
       <code class="envlist">{{ env_report.agent_process_sees|join(', ') }}</code>
       <p class="verdict">signing variables in the agent process:
         <strong>{{ env_report.signing_variables_in_agent|length }}</strong></p>

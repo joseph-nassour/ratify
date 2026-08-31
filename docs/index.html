@@ -181,7 +181,7 @@
 
   <ul class="chips">
     <li>Foxit eSign + Document Generation</li>
-    <li>123 tests, no network, under a second</li>
+    <li>135 tests, no network, under a second</li>
     <li>Runs end to end with no credentials</li>
     <li>Built by an AI agent — see below</li>
   </ul>
@@ -282,16 +282,25 @@
         forgets a variable, an allowlist forgets nothing.
       </p>
       <p>
-        The eSign credentials exist only in the parent web process. The agent's most privileged
-        possible output is a signature <em>request</em> — a row in a store. Foxit deliberately left
-        signing out of the MCP toolset; we did not remove a tool, we made sure there is no second
-        path to the thing they left out.
+        <b>No Foxit credential of any kind exists in the agent process</b> — and that is a
+        correction, not a boast. We first gave the agent the Document Generation credential and
+        withheld only the eSign one, because rendering is reversible and signing is not. Foxit has
+        since unified their APIs: one credential pair, one host, both products. So the document key
+        we were handing over was a key that could create <em>and release</em> an envelope in one
+        call. Every control we had kept passing, because they were keyed on the string
+        <code>ESIGN</code> and the leaked variable was called <code>FOXIT_CLOUD_API_CLIENT_SECRET</code>.
+        A credential is a capability, not a label.
+      </p>
+      <p>
+        The agent's most privileged possible output is a signature <em>request</em> — a row in a
+        store. Foxit deliberately left signing out of the MCP toolset; we did not remove a tool, we
+        made sure there is no second path to the thing they left out.
       </p>
       <p class="evidence">
         Asserted against a real spawned process — the test runs <code>subprocess.run</code>, reads the
-        child's <code>os.environ</code> back and checks no <code>*ESIGN*</code> variable survived.
+        child's <code>os.environ</code> back and checks no <code>*FOXIT*</code> variable survived.
         The running app exposes <code>/agent-env</code> so you can see it yourself in four seconds.
-        <code>tests/test_isolation.py</code> (13).
+        <code>tests/test_isolation.py</code> (25). The full account is DESIGN.md section 5.2.
       </p>
     </article>
 
@@ -434,12 +443,21 @@
   <h2>What this is not</h2>
   <p>An entry about not overtrusting automation should be accurate about itself.</p>
   <ul class="limits">
-    <li><b>The Foxit integration has not been run against the live service.</b> Both clients are
-      written to Foxit's published request shapes and sit behind one credential seam, but no call has
-      been made. Everything that decides what the human is asked to approve is exercised by 123 tests
-      against fixtures, and needs no credentials at all. <code>DRY_RUN=true</code> is the committed
-      default and produces a real, openable PDF from a dependency-free renderer written for this
-      purpose.</li>
+    <li><b>The Foxit integration is partly verified, and here is exactly which part.</b> Live
+      against the real service: authentication on the unified credential pair, and
+      <code>createfolder</code> with <code>inputType: "url"</code>, which returned a real
+      <code>DRAFT</code> envelope. Document Generation authenticates but has not been called with a
+      real template. <code>sendDraftFolder</code>, <code>download</code> and
+      <code>viewActivityHistory</code> have never met the service; their paths are marked unverified
+      in the source rather than in a note. Everything that decides what the human is asked to approve
+      is exercised by 135 tests against fixtures, and needs no credentials at all.
+      <code>DRY_RUN=true</code> is the committed default and produces a real, openable PDF from a
+      dependency-free renderer written for this purpose.</li>
+    <li><b>It runs on a Foxit sandbox key, and this deployment holds no key at all.</b> A production
+      key needs a paid plan we do not have. The public instance is deliberately configured with no
+      Foxit credentials, so that a stranger cannot spend the 500-credit annual allowance or create
+      envelopes in the account — what you exercise here is the full pipeline against the local
+      renderer and the dry-run fixtures.</li>
     <li><b>The model transports are likewise unverified.</b> The planner chain is Gemini → Groq →
       deterministic with a silent fallback; with no key present it runs deterministic. That is a
       smaller loss than it sounds — the safety properties are <em>stronger</em> on that path, because
@@ -468,7 +486,7 @@
     audit trail.
   </p>
   <pre><code>pip install -r requirements.txt
-python -m unittest discover -s tests -t .    # Ran 123 tests ... OK
+python -m unittest discover -s tests -t .    # Ran 135 tests ... OK
 uvicorn app.main:app --reload                # http://127.0.0.1:8000</code></pre>
   <p class="note" id="repo-note">
     The full boundary argument, with every claim mapped to the file and the test that proves it,

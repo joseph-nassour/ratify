@@ -4,15 +4,25 @@ Reads a job as JSON on stdin, emits JSON-lines events on stdout, exits.
 
     $ echo '{"prompt": "..."}' | python -m agent.run_agent
 
-What this process *can* do: read the instruction, classify terms, call Foxit Document
-Generation and the PDF Services MCP tools, and render a draft.
+What this process *can* do: read the instruction, classify terms, and compose a draft
+using a dependency-free local renderer that needs no credential and reaches no network.
 
-What this process *cannot* do: send anything for signature. Not because it is asked
-not to — because `FOXIT_ESIGN_CLIENT_ID` and `FOXIT_ESIGN_CLIENT_SECRET` are not in
-its environment, and the signing module under `app/` is not on any import path this
-package touches. (tests/test_isolation.py scans this package's source for even a
-mention of it, which is why this sentence does not name the module.) Its most
-privileged possible output is the event below:
+What this process *cannot* do: send anything for signature — or render anything
+through the vendor either. Not because it is asked not to, but because **no Foxit
+credential of any name is in its environment** (app/supervisor.py builds that
+environment from an allowlist that contains none), and the signing module under `app/`
+is not on any import path this package touches. (tests/test_isolation.py scans this
+package's source for even a mention of it, which is why this sentence does not name
+the module.)
+
+Note the 2026-08-30 correction, because it made this process *less* privileged, not
+more: Foxit unified their APIs behind a single credential pair, so the Document
+Generation key this process used to hold became a key that can also release a
+signature envelope. It was withdrawn. Rendering through the vendor now happens in the
+parent, from the term sheet a human has ratified — which also closes a gap nobody had
+named: the bytes that go for signature are no longer bytes this process produced.
+
+Its most privileged possible output is the event below:
 
     {"type": "signature_request", ...}
 
@@ -30,14 +40,20 @@ import sys
 import time
 from typing import Optional
 
-from agent.docgen_client import DocGenClient
+from agent import pdf_render
 from agent.llm_planner import select_planner
 from agent.planner import DeterministicPlanner, scan_for_injection
 from agent.terms import INVENTED
 
 # A guard, not a comment. If this module ever finds itself holding signing authority,
 # something upstream is broken and it should be loud about it immediately.
-_LEAKED = [k for k in os.environ if "ESIGN" in k.upper()]
+#
+# Widened on 2026-08-30 from ESIGN to any FOXIT variable. The narrow version would
+# have sat here passing while a unified credential — able to create AND release an
+# envelope in one call — was handed to this process under a name containing the word
+# "CLOUD". A guard keyed on a vendor's naming convention expires when the vendor
+# renames something; this one is keyed on who issued the credential.
+_LEAKED = [k for k in os.environ if "FOXIT" in k.upper() or "ESIGN" in k.upper()]
 if _LEAKED:
     print(json.dumps({
         "type": "fatal",
@@ -112,24 +128,33 @@ def main() -> int:
                  f"{counts['invented']} invented"))
 
     # -- render ---------------------------------------------------------------
-    docgen = DocGenClient()
-    emit(type="tool", name="docgen.GenerateDocumentBase64", status="running",
-         detail=docgen.mode())
-    template_b64 = job.get("template_b64") or _default_template_b64()
+    # A *preview*, drawn locally. This process holds no Foxit credential, so it cannot
+    # call Document Generation — and, since the credential is unified, that is the same
+    # sentence as "it cannot send an envelope". The document that is eventually put in
+    # front of a signer is rendered by the parent from the ratified term sheet; these
+    # bytes never reach the signer, which is why a compromised planner cannot smuggle
+    # anything into them.
+    emit(type="tool", name="compose_draft", status="running",
+         detail="local renderer, no credential, no network")
     provenance = {t.key: t.provenance for t in plan.sheet}
-    pdf, note = docgen.generate_with_fallback(
-        template_b64, plan.sheet.document_values(), provenance)
-    emit(type="tool", name="docgen.GenerateDocumentBase64", status="done",
-         detail=note, bytes=len(pdf))
+    pdf = pdf_render.render_engagement_letter(plan.sheet.document_values(), provenance)
+    emit(type="tool", name="compose_draft", status="done",
+         detail=("preview rendered locally; vendor rendering and signing both live in "
+                 "the parent process, which holds the credential this one does not"),
+         bytes=len(pdf))
 
-    # PDF Services operations via the Foxit MCP server land here in H4. They are
-    # non-material and ungated by design (hackathon-spec.md §2.5).
+    # PDF Services operations via the Foxit MCP server were specced to run *here*, in
+    # the agent, as the reversible non-material half of its work (hackathon-spec.md
+    # §2.5). The unified credential moved them: an MCP server configured with a Foxit
+    # key is an MCP server that could reach `/esign/api/v1/`, whatever tools it chooses
+    # to expose. So they belong to the parent, and this process announces them as
+    # delegated rather than pretending to run them.
     for tool_name, detail in (
         ("mcp.merge_pdf", "standard terms & conditions appended"),
         ("mcp.flatten_pdf", "document flattened"),
         ("mcp.extract_text", "rendered text read back and checked against the term sheet"),
     ):
-        emit(type="tool", name=tool_name, status="skipped-in-h3", detail=detail)
+        emit(type="tool", name=tool_name, status="delegated-to-supervisor", detail=detail)
 
     # -- the most privileged thing this process can emit ----------------------
     unresolved = [t.key for t in plan.sheet.unresolved()]
@@ -152,27 +177,11 @@ def main() -> int:
         notes=plan.notes,
         security_events=plan.security_events,
         pdf_b64=base64.b64encode(pdf).decode("ascii"),
-        docgen_mode=docgen.mode(),
+        render_mode="local preview (this process holds no Foxit credential)",
         invented_count=counts["invented"],
         planner=planner_name,
     )
     return 0
-
-
-def _default_template_b64() -> str:
-    """The DocGen .docx template, base64-encoded.
-
-    In H3 the dry-run renderer draws the letter directly, so the template body is only
-    needed on the live path (H4). Reading it from disk if present keeps the live call
-    shape honest: DocGen always receives a base64 template string.
-    """
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "templates", "engagement_letter.docx")
-    try:
-        with open(path, "rb") as fh:
-            return base64.b64encode(fh.read()).decode("ascii")
-    except OSError:
-        return ""
 
 
 if __name__ == "__main__":
