@@ -26,7 +26,7 @@
     <b></b>
     <span class="progress-step {% if s.folder_id %}complete{% endif %}"><i>4</i>Send</span>
   </div>
-  <div class="mode"><span class="status-dot"></span>{{ s.planner }} · {{ esign_mode }}</div>
+  <div class="mode"><span class="status-dot"></span>planner: {{ s.planner }} · {{ esign_mode }}</div>
 </header>
 
 {% if error %}
@@ -39,7 +39,7 @@
   <div>
     <strong>Prompt injection detected and ignored.</strong>
     <ul>{% for e in injections %}<li>{{ e }}</li>{% endfor %}</ul>
-    <span>The input tried to influence execution. The agent still has no credential with which to sign.</span>
+    <span>The hostile instruction was treated as document content and <b>not acted on</b>. The agent still has no credential with which to sign.</span>
   </div>
 </div>
 {% endif %}
@@ -50,7 +50,7 @@
   <div>
     <strong>Untrusted provenance claims rejected.</strong>
     <ul>{% for e in rejections %}<li>{{ e }}</li>{% endfor %}</ul>
-    <span>Ratify re-derives provenance from the human instruction instead of trusting the model's labels.</span>
+    <span>The hostile instruction was <b>not acted on</b>. Ratify re-derives provenance from the human instruction instead of trusting the model's labels.</span>
   </div>
 </div>
 {% endif %}
@@ -69,7 +69,7 @@
     <section class="col-main">
       <div class="terms-toolbar">
         <div>
-          <span class="card-label">MATERIAL TERMS</span>
+          <span class="card-label">Material terms</span>
           <h2>Document obligations</h2>
         </div>
         <div class="provenance-summary">
@@ -150,7 +150,7 @@
             <span class="card-label">SIGNATURE GATE</span>
             <h3>
               {% if s.folder_id %}Envelope created
-              {% elif ratified %}Ratified
+              {% elif ratified %}Ratified.
               {% elif gate_open %}Ready for human ratification
               {% else %}Locked
               {% endif %}
@@ -172,11 +172,13 @@
           {% else %}
             <form method="post" action="/s/{{ s.id }}/ratify" class="gate-action-form">
               <button class="primary action-button" type="submit" {% if not gate_open %}disabled{% endif %}>
-                Ratify this exact document <b>→</b>
+                Ratify these terms <b>→</b>
               </button>
             </form>
             {% if not gate_open %}
             <p class="gate-hint">Resolve every AI-invented material term to unlock human ratification.</p>
+            {% else %}
+            <p class="gate-hint">Approval will be bound to this exact document fingerprint.</p>
             {% endif %}
           {% endif %}
         {% else %}
