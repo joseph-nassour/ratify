@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#070a08">
   <title>Ratify — review & authorize</title>
-  <link rel="icon" href="/static/ratify-logo.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/ratify-logo.webp" type="image/webp">
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body class="page-session">
@@ -14,7 +14,7 @@
 
 <header class="bar shell">
   <a class="brand" href="/" aria-label="Ratify home">
-    <img class="brand-logo" src="/static/ratify-logo.svg" alt="">
+    <img class="brand-logo" src="/static/ratify-logo.webp" alt="">
     <span>Ratify</span>
   </a>
   <div class="session-progress" aria-label="Workflow progress">
@@ -142,6 +142,10 @@
 
     <aside class="col-side">
       <div class="gate-shell">
+        <div class="gate-brand-row">
+          <img src="/static/ratify-logo.webp" alt="" class="gate-logo">
+          <span>RATIFY AUTHORIZATION</span>
+        </div>
         <div class="gate-status {% if gate_open %}open{% else %}shut{% endif %}">
           <div class="gate-orb">
             {% if s.folder_id %}✓{% elif ratified %}R{% elif gate_open %}→{% else %}×{% endif %}
@@ -197,9 +201,12 @@
       </div>
 
       <div class="panel security-proof">
-        <div class="panel-heading">
-          <span class="card-label">SECURITY BOUNDARY</span>
-          <h3>The credential is not here.</h3>
+        <div class="panel-heading branded-heading">
+          <img src="/static/ratify-logo.webp" alt="" class="panel-logo">
+          <div>
+            <span class="card-label">SECURITY BOUNDARY</span>
+            <h3>The credential is not here.</h3>
+          </div>
         </div>
         <div class="process-map">
           <div class="process-node">
@@ -254,7 +261,7 @@
 
 <footer class="footer shell compact-footer">
   <a class="brand footer-brand" href="/">
-    <img class="brand-logo" src="/static/ratify-logo.svg" alt="">
+    <img class="brand-logo" src="/static/ratify-logo.webp" alt="">
     <span>Ratify</span>
   </a>
   <p>Human authority remains outside the agent boundary.</p>
