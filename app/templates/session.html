@@ -3,152 +3,268 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ratify — term sheet</title>
+  <meta name="theme-color" content="#070a08">
+  <title>Ratify — review & authorize</title>
+  <link rel="icon" href="/static/ratify-logo.webp" type="image/webp">
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
-<header class="bar">
-  <div class="brand"><a href="/">Ratify</a></div>
-  <div class="mode">planner: {{ s.planner }} &nbsp;·&nbsp; eSign: {{ esign_mode }}</div>
+<body class="page-session">
+<div class="ambient ambient-one"></div>
+<div class="ambient ambient-two"></div>
+
+<header class="bar shell">
+  <a class="brand" href="/" aria-label="Ratify home">
+    <img class="brand-logo" src="/static/ratify-logo.webp" alt="">
+    <span>Ratify</span>
+  </a>
+  <div class="session-progress" aria-label="Workflow progress">
+    <span class="progress-step complete"><i>1</i>Draft</span>
+    <b></b>
+    <span class="progress-step {% if gate_open %}complete{% else %}active{% endif %}"><i>2</i>Review</span>
+    <b></b>
+    <span class="progress-step {% if ratified or s.folder_id %}complete{% elif gate_open %}active{% endif %}"><i>3</i>Ratify</span>
+    <b></b>
+    <span class="progress-step {% if s.folder_id %}complete{% endif %}"><i>4</i>Send</span>
+  </div>
+  <div class="mode"><span class="status-dot"></span>planner: {{ s.planner }} · {{ esign_mode }}</div>
 </header>
 
-{% if error %}<div class="banner error">{{ error }}</div>{% endif %}
+{% if error %}
+<div class="banner error shell-inner"><strong>Action blocked.</strong> {{ error }}</div>
+{% endif %}
 
 {% if injections %}
-<div class="banner security">
-  <strong>Instruction-like text found in the input and not acted on.</strong>
-  <ul>{% for e in injections %}<li>{{ e }}</li>{% endfor %}</ul>
-  <span>The agent does not obey text found in its inputs — and holds no signing
-  credential even if it did.</span>
+<div class="banner security shell-inner">
+  <div class="banner-icon">!</div>
+  <div>
+    <strong>Prompt injection detected and ignored.</strong>
+    <ul>{% for e in injections %}<li>{{ e }}</li>{% endfor %}</ul>
+    <span>The hostile instruction was treated as document content and <b>not acted on</b>. The agent still has no credential with which to sign.</span>
+  </div>
 </div>
 {% endif %}
 
 {% if rejections %}
-<div class="banner security provenance">
-  <strong>The model's claims about where terms came from were rejected.</strong>
-  <ul>{% for e in rejections %}<li>{{ e }}</li>{% endfor %}</ul>
-  <span>Provenance is re-derived from your own instruction; the model's own labels are
-  discarded. A term it cannot account for is shown to you as invented — which is what
-  keeps the gate shut when the model has been talked into something.</span>
+<div class="banner security provenance shell-inner">
+  <div class="banner-icon">#</div>
+  <div>
+    <strong>Untrusted provenance claims rejected.</strong>
+    <ul>{% for e in rejections %}<li>{{ e }}</li>{% endfor %}</ul>
+    <span>The hostile instruction was <b>not acted on</b>. Ratify re-derives provenance from the human instruction instead of trusting the model's labels.</span>
+  </div>
 </div>
 {% endif %}
 
-<main class="wrap cols">
-  <section class="col-main">
-    <h2>Material terms
-      <span class="pill stated">{{ counts.stated }} stated</span>
-      <span class="pill derived">{{ counts.derived }} derived</span>
-      <span class="pill invented">{{ counts.invented }} invented</span>
-    </h2>
-
-    {% for t in s.sheet.display_order() %}
-    <article class="term {{ t.provenance }} {% if t.resolved %}resolved{% endif %} {% if t.resolution == 'removed' %}removed{% endif %}">
-      <div class="term-head">
-        <span class="label">{{ t.label }}</span>
-        <span class="tag {{ t.provenance }}">{{ t.provenance }}</span>
-        {% if t.resolution %}<span class="tag done">{{ t.resolution }}</span>{% endif %}
-      </div>
-      <div class="value">{% if t.resolution == 'removed' %}<s>{{ t.proposed_value }}</s>{% else %}{{ t.value }}{% endif %}</div>
-      <div class="evidence">{{ t.evidence }}</div>
-      {% if not t.resolved %}
-      <form method="post" action="/s/{{ s.id }}/term/{{ t.key }}" class="actions">
-        <button name="action" value="accept" class="ok">Accept</button>
-        <input type="text" name="value" placeholder="replace with…" aria-label="new value for {{ t.label }}">
-        <button name="action" value="edit">Use mine</button>
-        {% if t.removable %}<button name="action" value="remove" class="danger">Remove</button>{% endif %}
-      </form>
-      {% elif not s.folder_id %}
-      {# Already decided, but the envelope does not exist yet, so this is still
-         revisable. It matters that it is: changing a term after ratifying revokes
-         the approval, because the approval was minted against the old fingerprint.
-         That is the "approved v1, sent v2" failure, and if the UI offered no way to
-         reach it the entry's strongest property would be invisible. #}
-      <form method="post" action="/s/{{ s.id }}/term/{{ t.key }}" class="actions revise">
-        <input type="text" name="value" placeholder="change this…" aria-label="change {{ t.label }}">
-        <button name="action" value="edit">Change it</button>
-      </form>
-      {% endif %}
-    </article>
-    {% endfor %}
+<main class="workspace shell">
+  <section class="workspace-head">
+    <div>
+      <span class="section-kicker">SESSION · {{ s.id }}</span>
+      <h1>Review what the agent wants you to approve.</h1>
+      <p>Every material term is classified by where it came from. AI-invented obligations must be explicitly resolved before the signature gate can open.</p>
+    </div>
+    <a href="/doc/{{ s.doc_id }}.pdf" target="_blank" class="button ghost">Open draft PDF ↗</a>
   </section>
 
-  <aside class="col-side">
-    <div class="card gate {% if gate_open %}open{% else %}shut{% endif %}">
-      <h3>Signature gate</h3>
-      <p class="reason">{{ gate_reason }}</p>
+  <div class="cols">
+    <section class="col-main">
+      <div class="terms-toolbar">
+        <div>
+          <span class="card-label">Material terms</span>
+          <h2>Document obligations</h2>
+        </div>
+        <div class="provenance-summary">
+          <span class="pill stated"><i></i>{{ counts.stated }} stated</span>
+          <span class="pill derived"><i></i>{{ counts.derived }} derived</span>
+          <span class="pill invented"><i></i>{{ counts.invented }} invented</span>
+        </div>
+      </div>
 
-      {% if not s.folder_id %}
-        {% if ratified %}
-          <p class="ok-note">Ratified. The approval is bound to this exact version of the
-          document — change any term and it is revoked.</p>
-          <form method="post" action="/s/{{ s.id }}/send">
-            <button class="primary" type="submit">Send for signature</button>
+      {% for t in s.sheet.display_order() %}
+      <article class="term {{ t.provenance }} {% if t.resolved %}resolved{% endif %} {% if t.resolution == 'removed' %}removed{% endif %}">
+        <div class="term-stripe"></div>
+        <div class="term-body">
+          <div class="term-head">
+            <div>
+              <span class="label">{{ t.label }}</span>
+              <div class="evidence">{{ t.evidence }}</div>
+            </div>
+            <div class="term-tags">
+              <span class="tag {{ t.provenance }}">{{ t.provenance }}</span>
+              {% if t.resolution %}<span class="tag done">✓ {{ t.resolution }}</span>{% endif %}
+            </div>
+          </div>
+          <div class="value">{% if t.resolution == 'removed' %}<s>{{ t.proposed_value }}</s>{% else %}{{ t.value }}{% endif %}</div>
+
+          {% if not t.resolved %}
+          <div class="decision-callout">
+            <span class="decision-dot"></span>
+            Human decision required before this obligation can pass the gate.
+          </div>
+          <form method="post" action="/s/{{ s.id }}/term/{{ t.key }}" class="actions">
+            <button name="action" value="accept" class="ok">Accept proposed</button>
+            <div class="inline-edit">
+              <input type="text" name="value" placeholder="Replace with your value…" aria-label="new value for {{ t.label }}">
+              <button name="action" value="edit">Use mine</button>
+            </div>
+            {% if t.removable %}<button name="action" value="remove" class="danger">Remove term</button>{% endif %}
           </form>
-        {% else %}
-          <form method="post" action="/s/{{ s.id }}/ratify">
-            <button class="primary" type="submit" {% if not gate_open %}disabled{% endif %}>
-              Ratify these terms
-            </button>
+          {% elif not s.folder_id %}
+          <form method="post" action="/s/{{ s.id }}/term/{{ t.key }}" class="actions revise">
+            <span class="revise-label">Change after review</span>
+            <div class="inline-edit">
+              <input type="text" name="value" placeholder="Change this value…" aria-label="change {{ t.label }}">
+              <button name="action" value="edit">Change it</button>
+            </div>
           </form>
-          {% if not gate_open %}<p class="hint">The button is disabled because the agent
-          invented terms nobody has agreed to yet.</p>{% endif %}
-        {% endif %}
-      {% else %}
-        <p class="envelope">Envelope <code>{{ s.folder_id }}</code> — {{ s.envelope_status }}</p>
-        {% if s.envelope_status != 'COMPLETED' %}
-        <form method="post" action="/s/{{ s.id }}/simulate-signature">
-          <button type="submit">Simulate the signer signing</button>
-        </form>
-        {% endif %}
-        <p><a href="/s/{{ s.id }}/status">Envelope status &amp; audit trail (JSON)</a></p>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+
+      {% if diff %}
+      <div class="panel diff-panel">
+        <div class="panel-heading">
+          <span class="card-label">AGENT DELTA</span>
+          <h3>What the agent added or derived</h3>
+        </div>
+        <ul class="diff">
+          {% for d in diff %}
+          <li>
+            <span class="tag {{ d.origin }}">{{ d.origin }}</span>
+            <div><strong>{{ d.label }}</strong><span>{{ d.value or '—' }}</span></div>
+            {% if d.resolution %}<em>{{ d.resolution }}</em>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
       {% endif %}
-      <p><a href="/doc/{{ s.doc_id }}.pdf" target="_blank">Open the draft PDF</a></p>
-    </div>
+    </section>
 
-    {% if diff %}
-    <div class="card">
-      <h3>What the agent added</h3>
-      <ul class="diff">
-        {% for d in diff %}
-        <li><span class="tag {{ d.origin }}">{{ d.origin }}</span>
-          <strong>{{ d.label }}</strong>: {{ d.value or '—' }}
-          {% if d.resolution %}<em>({{ d.resolution }})</em>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
+    <aside class="col-side">
+      <div class="gate-shell">
+        <div class="gate-brand-row">
+          <img src="/static/ratify-logo.webp" alt="" class="gate-logo">
+          <span>RATIFY AUTHORIZATION</span>
+        </div>
+        <div class="gate-status {% if gate_open %}open{% else %}shut{% endif %}">
+          <div class="gate-orb">
+            {% if s.folder_id %}✓{% elif ratified %}R{% elif gate_open %}→{% else %}×{% endif %}
+          </div>
+          <div>
+            <span class="card-label">SIGNATURE GATE</span>
+            <h3>
+              {% if s.folder_id %}Envelope created
+              {% elif ratified %}Ratified.
+              {% elif gate_open %}Ready for human ratification
+              {% else %}Locked
+              {% endif %}
+            </h3>
+          </div>
+        </div>
+        <p class="reason">{{ gate_reason }}</p>
 
-    <div class="card">
-      <h3>Agent tool log</h3>
-      <ol class="log">
-        {% for st in s.steps %}
-        <li class="{% if st.gated %}gated{% endif %}">{{ st.name }}
-          <span>{{ st.description }}</span></li>
-        {% endfor %}
-      </ol>
-      <p class="hint">{{ s.docgen_mode }}</p>
-      {% for n in s.notes %}<p class="hint">{{ n }}</p>{% endfor %}
-    </div>
+        {% if not s.folder_id %}
+          {% if ratified %}
+            <div class="approval-proof">
+              <span>APPROVAL ACTIVE</span>
+              <strong>Bound to this exact document</strong>
+              <small>Any material edit revokes it automatically.</small>
+            </div>
+            <form method="post" action="/s/{{ s.id }}/send" class="gate-action-form">
+              <button class="primary action-button" type="submit">Send for signature <b>→</b></button>
+            </form>
+          {% else %}
+            <form method="post" action="/s/{{ s.id }}/ratify" class="gate-action-form">
+              <button class="primary action-button" type="submit" {% if not gate_open %}disabled{% endif %}>
+                Ratify these terms <b>→</b>
+              </button>
+            </form>
+            {% if not gate_open %}
+            <p class="gate-hint">Resolve every AI-invented material term to unlock human ratification.</p>
+            {% else %}
+            <p class="gate-hint">Approval will be bound to this exact document fingerprint.</p>
+            {% endif %}
+          {% endif %}
+        {% else %}
+          <div class="envelope-card">
+            <span>FOXIT ENVELOPE</span>
+            <code>{{ s.folder_id }}</code>
+            <strong>{{ s.envelope_status }}</strong>
+          </div>
+          {% if s.envelope_status != 'COMPLETED' %}
+          <form method="post" action="/s/{{ s.id }}/simulate-signature" class="gate-action-form">
+            <button type="submit" class="button secondary wide">Simulate signer completing</button>
+          </form>
+          {% endif %}
+          <a class="text-link" href="/s/{{ s.id }}/status">View status & audit trail →</a>
+        {% endif %}
+      </div>
 
-    <div class="card env">
-      <h3>What the agent process can see</h3>
-      <p class="hint">Variable names only. Every Foxit credential lives in the parent
-      process and none was copied into the agent's environment — not the eSign one, and
-      not the Document Generation one either, because Foxit unified their APIs and they
-      are now the same key.</p>
-      <code class="envlist">{{ env_report.agent_process_sees|join(', ') }}</code>
-      <p class="verdict">signing variables in the agent process:
-        <strong>{{ env_report.signing_variables_in_agent|length }}</strong></p>
-    </div>
+      <div class="panel security-proof">
+        <div class="panel-heading branded-heading">
+          <img src="/static/ratify-logo.webp" alt="" class="panel-logo">
+          <div>
+            <span class="card-label">SECURITY BOUNDARY</span>
+            <h3>The credential is not here.</h3>
+          </div>
+        </div>
+        <div class="process-map">
+          <div class="process-node">
+            <span>AI</span>
+            <div><b>Agent process</b><small>Drafting authority</small></div>
+          </div>
+          <div class="process-wall"><span>NO FOXIT KEY</span></div>
+          <div class="process-node parent">
+            <span>✓</span>
+            <div><b>Parent process</b><small>Signing authority</small></div>
+          </div>
+        </div>
+        <div class="zero-proof">
+          <span>Signing variables in agent</span>
+          <strong>{{ env_report.signing_variables_in_agent|length }}</strong>
+        </div>
+        <code class="envlist">{{ env_report.agent_process_sees|join(', ') }}</code>
+        <a class="text-link" href="/agent-env">Inspect live environment proof →</a>
+      </div>
 
-    <div class="card">
-      <h3>Activity</h3>
-      <ul class="hist">
-        {% for h in s.history %}<li><code>{{ h.at }}</code> {{ h.message }}</li>{% endfor %}
-      </ul>
-    </div>
-  </aside>
+      <div class="panel">
+        <div class="panel-heading">
+          <span class="card-label">EXECUTION TRACE</span>
+          <h3>Agent tool log</h3>
+        </div>
+        <ol class="log">
+          {% for st in s.steps %}
+          <li class="{% if st.gated %}gated{% endif %}">
+            <i></i>
+            <div><b>{{ st.name }}</b><span>{{ st.description }}</span></div>
+          </li>
+          {% endfor %}
+        </ol>
+        <p class="hint">{{ s.docgen_mode }}</p>
+        {% for n in s.notes %}<p class="hint">{{ n }}</p>{% endfor %}
+      </div>
+
+      <div class="panel activity-panel">
+        <div class="panel-heading">
+          <span class="card-label">AUDIT LOG</span>
+          <h3>Activity</h3>
+        </div>
+        <ul class="hist">
+          {% for h in s.history %}
+          <li><code>{{ h.at }}</code><span>{{ h.message }}</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    </aside>
+  </div>
 </main>
+
+<footer class="footer shell compact-footer">
+  <a class="brand footer-brand" href="/">
+    <img class="brand-logo" src="/static/ratify-logo.webp" alt="">
+    <span>Ratify</span>
+  </a>
+  <p>Human authority remains outside the agent boundary.</p>
+</footer>
 </body>
 </html>

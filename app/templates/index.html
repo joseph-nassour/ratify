@@ -3,64 +3,204 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ratify — drafted by an agent, ratified by a human</title>
+  <meta name="theme-color" content="#070a08">
+  <title>Ratify — human authorization for AI agents</title>
+  <link rel="icon" href="/static/ratify-logo.webp" type="image/webp">
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
-<header class="bar">
-  <div class="brand">Ratify</div>
-  <div class="mode">eSign: {{ esign_mode }}</div>
+<body class="page-home">
+<div class="ambient ambient-one"></div>
+<div class="ambient ambient-two"></div>
+
+<header class="bar shell">
+  <a class="brand" href="/" aria-label="Ratify home">
+    <img class="brand-logo" src="/static/ratify-logo.webp" alt="">
+    <span>Ratify</span>
+  </a>
+  <nav class="nav-links" aria-label="Primary">
+    <a href="#demo">Live demo</a>
+    <a href="#boundary">Security</a>
+    <a href="/agent-env">Agent proof</a>
+  </nav>
+  <div class="mode"><span class="status-dot"></span>eSign · {{ esign_mode }}</div>
 </header>
 
-<main class="wrap narrow">
-  <h1>An agent that drafts engagement letters<br><em>and cannot sign them.</em></h1>
-  <p class="lede">
-    Not because it is told not to — because the signing credential does not exist in the
-    process it runs in. Every term it <strong>invented</strong> rather than was
-    <strong>told</strong> is surfaced for a human decision before a signature request can
-    exist at all.
-  </p>
-
-  <form method="post" action="/draft" class="card">
-    <label for="prompt">Describe the engagement</label>
-    <textarea id="prompt" name="prompt" rows="5" required>{{ example }}</textarea>
-    <fieldset class="attacks">
-      <legend>Attach a supporting document <span class="hint">— the adversarial test</span></legend>
-      <label class="check"><input type="radio" name="poisoned" value="" checked>
-        Clean document</label>
-      <label class="check"><input type="radio" name="poisoned" value="sign">
-        …carrying an instruction to <strong>sign immediately</strong>
-        <span class="hint">aims at the signing call — fails on architecture</span></label>
-      <label class="check"><input type="radio" name="poisoned" value="provenance">
-        …carrying an instruction to <strong>report the agent's own terms as yours</strong>
-        <span class="hint">aims at the gate — fails on adjudication</span></label>
-    </fieldset>
-    <button type="submit" class="primary">Draft it</button>
-  </form>
-
-  <section class="explainer">
-    <h2>Where the boundary is drawn</h2>
-    <div class="grid3">
-      <div>
-        <h3>Not at the end</h3>
-        <p>A confirm button before signing asks a human to take responsibility for an
-        artefact they did not compose, decided fifteen tool calls upstream. The gates go
-        upstream, at each term you will be bound by.</p>
+<main>
+  <section class="hero shell">
+    <div class="hero-copy">
+      <div class="eyebrow"><span class="eyebrow-dot"></span>Human authorization layer for AI</div>
+      <h1>AI can prepare it.<br><span>Only you can authorize it.</span></h1>
+      <p class="lede">
+        Ratify separates intelligence from authority. The agent can draft and review agreements,
+        but the signing credential does not exist in the process it runs in.
+      </p>
+      <div class="hero-actions">
+        <a class="button primary glow" href="#demo">Test Ratify <span aria-hidden="true">→</span></a>
+        <a class="button ghost" href="/agent-env">Inspect the boundary</a>
       </div>
-      <div>
-        <h3>Not on reversibility</h3>
-        <p>Silently changing a fee is perfectly reversible and completely unsafe. The axis
-        that predicts harm is <em>does this change what the human will be bound to</em>.</p>
+      <div class="trust-row">
+        <span><i class="mini-check">✓</i> Credential isolated</span>
+        <span><i class="mini-check">✓</i> Document-bound approval</span>
+        <span><i class="mini-check">✓</i> Edit = revoke</span>
       </div>
-      <div>
-        <h3>Not on "shouldn't"</h3>
-        <p>An agent that shouldn't sign will sign when a document it reads says to. This
-        one holds no signing credential at all — <a href="/agent-env">see for yourself</a>.</p>
+    </div>
+
+    <div class="hero-visual" aria-label="Ratify security boundary">
+      <div class="orbital-card">
+        <div class="orbital-grid"></div>
+        <div class="seal-wrap">
+          <img src="/static/ratify-logo.webp" class="hero-logo" alt="Ratify">
+          <div class="orbit orbit-a"></div>
+          <div class="orbit orbit-b"></div>
+        </div>
+        <div class="boundary-flow">
+          <div class="flow-node">
+            <span class="node-icon">AI</span>
+            <div><b>Agent process</b><small>Draft · review · reason</small></div>
+          </div>
+          <div class="hard-boundary">
+            <span>HARD BOUNDARY</span>
+            <div class="boundary-line"></div>
+            <small>0 signing credentials exposed</small>
+          </div>
+          <div class="flow-node authorized">
+            <span class="node-icon">✓</span>
+            <div><b>Human authority</b><small>Ratify exact document</small></div>
+          </div>
+        </div>
+        <div class="system-strip">
+          <span><i></i> SECURITY MODEL ACTIVE</span>
+          <code>FOXIT_* → PARENT ONLY</code>
+        </div>
       </div>
     </div>
   </section>
-  <p class="foot">Built with the Foxit PDF, Document Generation and eSign APIs.
-  Code written by Claude working autonomously; a human reviews and submits.</p>
+
+  <section id="demo" class="demo-section shell">
+    <div class="section-heading">
+      <div>
+        <span class="section-kicker">LIVE / JUDGE DEMO</span>
+        <h2>Give the agent a job.</h2>
+      </div>
+      <p>Start with the default engagement or replace it with your own. This form calls the real Ratify drafting route.</p>
+    </div>
+
+    <div class="demo-layout">
+      <form method="post" action="/draft" class="demo-card" id="draft-form">
+        <div class="card-topline">
+          <span class="card-label">01 · INSTRUCTION</span>
+          <span class="secure-chip"><span class="status-dot"></span>Agent sandboxed</span>
+        </div>
+        <label for="prompt" class="field-label">Describe the agreement you want drafted</label>
+        <div class="prompt-shell">
+          <span class="prompt-mark">&gt;_</span>
+          <textarea id="prompt" name="prompt" rows="6" required spellcheck="true">{{ example }}</textarea>
+        </div>
+
+        <fieldset class="attacks">
+          <legend>Adversarial input <span class="hint">optional security test</span></legend>
+          <label class="attack-option">
+            <input type="radio" name="poisoned" value="" checked>
+            <span class="radio-ui"></span>
+            <span><b>Clean document</b><small>Normal drafting path</small></span>
+          </label>
+          <label class="attack-option">
+            <input type="radio" name="poisoned" value="sign">
+            <span class="radio-ui"></span>
+            <span><b>Prompt injection: sign immediately</b><small>Attempts to cross the signing boundary</small></span>
+          </label>
+          <label class="attack-option">
+            <input type="radio" name="poisoned" value="provenance">
+            <span class="radio-ui"></span>
+            <span><b>Prompt injection: falsify provenance</b><small>Attempts to hide AI-invented terms from review</small></span>
+          </label>
+        </fieldset>
+
+        <button type="submit" class="primary action-button" id="draft-button">
+          <span class="button-ready">Draft with Ratify <b>→</b></span>
+          <span class="button-loading">Running isolated agent…</span>
+        </button>
+        <p class="form-note">The agent can create a draft. It cannot create signing authority.</p>
+      </form>
+
+      <aside class="demo-side">
+        <div class="metric-card">
+          <img class="metric-seal" src="/static/ratify-logo.webp" alt="">
+          <span class="metric-value">0</span>
+          <span class="metric-label">Foxit credentials visible to agent</span>
+          <a href="/agent-env">Verify live →</a>
+        </div>
+        <div class="mini-panel">
+          <span class="card-label">WHAT HAPPENS NEXT</span>
+          <ol class="flow-list">
+            <li><span>01</span><div><b>Agent drafts</b><small>Material terms get provenance.</small></div></li>
+            <li><span>02</span><div><b>You review</b><small>Invented terms must be resolved.</small></div></li>
+            <li><span>03</span><div><b>You ratify</b><small>Approval binds to the exact fingerprint.</small></div></li>
+            <li><span>04</span><div><b>Parent sends</b><small>Only after the gate verifies again.</small></div></li>
+          </ol>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="boundary" class="boundary-section shell">
+    <div class="section-heading">
+      <div>
+        <span class="section-kicker">THE RATIFY PRINCIPLE</span>
+        <h2>Don't ask AI to respect a boundary.<br>Build one it cannot cross.</h2>
+      </div>
+    </div>
+    <div class="feature-grid">
+      <article class="feature-card">
+        <span class="feature-number">01</span>
+        <div class="feature-icon">⌘</div>
+        <h3>Gate the obligation</h3>
+        <p>Ratify stops where a decision changes what the human will be bound to — not at every harmless tool call.</p>
+      </article>
+      <article class="feature-card">
+        <span class="feature-number">02</span>
+        <div class="feature-icon">#</div>
+        <h3>Bind approval to content</h3>
+        <p>Ratification is minted against a fingerprint of the exact material terms, not a loose session flag.</p>
+      </article>
+      <article class="feature-card">
+        <span class="feature-number">03</span>
+        <div class="feature-icon">↺</div>
+        <h3>Revoke on edit</h3>
+        <p>Change the fee, signer or clause after approval and the old authorization becomes unusable automatically.</p>
+      </article>
+      <article class="feature-card">
+        <span class="feature-number">04</span>
+        <div class="feature-icon">⊘</div>
+        <h3>Remove the capability</h3>
+        <p>The agent has no Foxit credential. Even a successful prompt injection cannot make a secret appear in its process.</p>
+      </article>
+    </div>
+  </section>
 </main>
+
+<footer class="footer shell">
+  <a class="brand footer-brand" href="/">
+    <img class="brand-logo" src="/static/ratify-logo.webp" alt="">
+    <span>Ratify</span>
+  </a>
+  <p>AI does the work. Humans retain the authority.</p>
+  <div class="footer-meta">
+    <span>Built for the Foxit challenge</span>
+    <span class="footer-dot">·</span>
+    <span>DevNetwork API + Cloud + AI Hackathon 2026</span>
+  </div>
+</footer>
+
+<script>
+  const draftForm = document.getElementById('draft-form');
+  const draftButton = document.getElementById('draft-button');
+  if (draftForm && draftButton) {
+    draftForm.addEventListener('submit', () => {
+      draftButton.classList.add('is-loading');
+      draftButton.disabled = true;
+    });
+  }
+</script>
 </body>
 </html>
